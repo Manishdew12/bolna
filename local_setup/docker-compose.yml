@@ -16,6 +16,9 @@ services:
     environment:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - BOLNA_API_KEY=${BOLNA_API_KEY:-}
+      - VOBIZ_AUTH_ID=${VOBIZ_AUTH_ID:-}
+      - VOBIZ_AUTH_TOKEN=${VOBIZ_AUTH_TOKEN:-}
+      - VOBIZ_PHONE_NUMBER=${VOBIZ_PHONE_NUMBER:-}
       - SARVAM_API_KEY=${SARVAM_API_KEY:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}

@@ -3,7 +3,9 @@ import asyncio
 import uuid
 import traceback
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Body, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from requests.auth import HTTPBasicAuth
+import requests
 from fastapi.middleware.cors import CORSMiddleware
 import redis.asyncio as redis
 from dotenv import load_dotenv
@@ -31,7 +33,7 @@ app = FastAPI(
 @app.middleware("http")
 async def verify_api_key(request: Request, call_next):
     # Allow public endpoints
-    if request.url.path in ["/", "/health", "/docs", "/openapi.json", "/favicon.ico"]:
+    if request.url.path in ["/", "/health", "/docs", "/openapi.json", "/favicon.ico", "/vobiz/answer"]:
         return await call_next(request)
     
     expected_api_key = os.getenv("BOLNA_API_KEY")
@@ -58,6 +60,57 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+class VobizCallRequest(BaseModel):
+    to: str
+    from_number: Optional[str] = None
+    agent_id: Optional[str] = None
+
+@app.api_route("/vobiz/answer", methods=["GET", "POST"])
+async def vobiz_answer(request: Request, agent_id: Optional[str] = Query(None)):
+    target_agent_id = agent_id or "3729ca3a-d5de-475a-b4bc-7415669f6cb4"
+    api_key = os.getenv("BOLNA_API_KEY", "")
+    xml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">
+    wss://voice.posterapp.online/chat/v1/{target_agent_id}?api_key={api_key}
+  </Stream>
+</Response>"""
+    return Response(content=xml_content, media_type="application/xml")
+
+@app.post("/vobiz/call")
+async def trigger_vobiz_call(call_req: VobizCallRequest):
+    auth_id = os.getenv("VOBIZ_AUTH_ID", "MA_BO49VA1N")
+    auth_token = os.getenv("VOBIZ_AUTH_TOKEN", "6TzamBoA56wfrWlLUy3NhdTNvUwZ4GgqDElOBjtd0jtRpBo7yS39kjKNHk9ejprG")
+    from_num = call_req.from_number or os.getenv("VOBIZ_PHONE_NUMBER", "918065354620")
+    to_num = call_req.to.replace("+", "").strip()
+    agent_id = call_req.agent_id or "3729ca3a-d5de-475a-b4bc-7415669f6cb4"
+    
+    answer_url = f"https://voice.posterapp.online/vobiz/answer?agent_id={agent_id}"
+    
+    url = f"https://api.vobiz.ai/api/v1/Account/{auth_id}/Call/"
+    payload = {
+        "from": from_num,
+        "to": to_num,
+        "answer_url": answer_url,
+        "answer_method": "POST"
+    }
+    
+    try:
+        resp = requests.post(
+            url,
+            auth=HTTPBasicAuth(auth_id, auth_token),
+            json=payload,
+            timeout=15
+        )
+        if resp.status_code in [200, 201, 202]:
+            return {"status": "calling", "vobiz_response": resp.json()}
+        else:
+            logger.error(f"Vobiz Call Error: {resp.status_code} - {resp.text}")
+            return JSONResponse(status_code=resp.status_code, content={"error": resp.text})
+    except Exception as e:
+        logger.error(f"Error triggering Vobiz call: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]

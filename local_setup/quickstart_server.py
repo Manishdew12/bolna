@@ -16,11 +16,24 @@ from bolna.agent_manager.assistant_manager import AssistantManager
 load_dotenv()
 logger = configure_logger(__name__)
 
-redis_pool = redis.ConnectionPool.from_url(os.getenv("REDIS_URL"), decode_responses=True)
+redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
+redis_pool = redis.ConnectionPool.from_url(redis_url, decode_responses=True)
 redis_client = redis.Redis.from_pool(redis_pool)
 active_websockets: List[WebSocket] = []
 
 app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "service": "Bolna AI Voice Engine",
+        "version": "1.0.0"
+    }
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]

@@ -2,7 +2,8 @@ import os
 import asyncio
 import uuid
 import traceback
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Body, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import redis.asyncio as redis
 from dotenv import load_dotenv
@@ -21,7 +22,30 @@ redis_pool = redis.ConnectionPool.from_url(redis_url, decode_responses=True)
 redis_client = redis.Redis.from_pool(redis_pool)
 active_websockets: List[WebSocket] = []
 
-app = FastAPI()
+app = FastAPI(
+    title="Bolna AI Voice Engine",
+    description="Protected Voice AI Engine with API Key Authentication",
+    version="1.0.0"
+)
+
+@app.middleware("http")
+async def verify_api_key(request: Request, call_next):
+    # Allow public endpoints
+    if request.url.path in ["/", "/health", "/docs", "/openapi.json", "/favicon.ico"]:
+        return await call_next(request)
+    
+    expected_api_key = os.getenv("BOLNA_API_KEY")
+    if expected_api_key:
+        auth_header = request.headers.get("authorization")
+        bearer_token = auth_header.replace("Bearer ", "").strip() if auth_header and auth_header.startswith("Bearer ") else None
+        client_key = request.headers.get("x-api-key") or bearer_token or request.query_params.get("api_key")
+        if not client_key or client_key != expected_api_key:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Unauthorized: Invalid or missing API key. Provide 'X-API-KEY' header or Bearer token."}
+            )
+            
+    return await call_next(request)
 
 @app.get("/")
 async def root():
@@ -186,7 +210,14 @@ async def get_all_agents():
 # Websocket
 #############################################################################################
 @app.websocket("/chat/v1/{agent_id}")
-async def websocket_endpoint(agent_id: str, websocket: WebSocket, user_agent: str = Query(None)):
+async def websocket_endpoint(agent_id: str, websocket: WebSocket, user_agent: str = Query(None), api_key: str = Query(None)):
+    expected_api_key = os.getenv("BOLNA_API_KEY")
+    if expected_api_key:
+        client_key = api_key or websocket.headers.get("x-api-key")
+        if not client_key or client_key != expected_api_key:
+            await websocket.close(code=1008)
+            return
+
     logger.info("Connected to ws")
     await websocket.accept()
     active_websockets.append(websocket)

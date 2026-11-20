@@ -15,6 +15,7 @@ services:
     restart: always
     environment:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - BOLNA_API_KEY=${BOLNA_API_KEY:-}
       - SARVAM_API_KEY=${SARVAM_API_KEY:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
